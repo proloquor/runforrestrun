@@ -10,17 +10,20 @@ final class AppModel: ObservableObject {
     let ouraClient: OuraClient
     let coach: AudioCoach
     let monitor: HeartRateMonitor
+    let ringLogger: RingFrameLogger
 
     init() {
         let profileStore = ProfileStore()
         let historyStore = HistoryStore()
         let ouraClient = OuraClient()
         let coach = AudioCoach()
+        let ringLogger = RingFrameLogger()
 
         self.profileStore = profileStore
         self.historyStore = historyStore
         self.ouraClient = ouraClient
         self.coach = coach
+        self.ringLogger = ringLogger
 
         // On device, prefer the direct Oura-ring source if the user has saved a ring
         // key; otherwise fall back to a Bluetooth strap. The simulator has no BLE, so
@@ -36,7 +39,7 @@ final class AppModel: ObservableObject {
             switch kind {
             case .ouraRing:
                 let key = Keychain.get(OuraRingHeartRateSource.keychainKey).flatMap { Data(hexString: $0) }
-                return OuraRingHeartRateSource(authKey: key)
+                return OuraRingHeartRateSource(authKey: key, debug: ringLogger)
             case .bluetooth: return BLEHeartRateSource()
             case .oura: return OuraLiveHeartRateSource(client: ouraClient)
             case .simulated: return SimulatedHeartRateSource()

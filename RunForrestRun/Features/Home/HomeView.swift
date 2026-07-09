@@ -118,6 +118,7 @@ extension View {
             .environmentObject(model.ouraClient)
             .environmentObject(model.monitor)
             .environmentObject(model.coach)
+            .environmentObject(model.ringLogger)
     }
 }
 

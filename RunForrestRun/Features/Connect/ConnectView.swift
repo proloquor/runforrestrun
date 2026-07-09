@@ -59,6 +59,11 @@ struct ConnectView: View {
             if let ringKeyError {
                 Text(ringKeyError).font(.caption).foregroundStyle(Theme.danger)
             }
+            NavigationLink {
+                RingDebugView()
+            } label: {
+                Label("Open ring debug log", systemImage: "waveform.path.ecg.rectangle")
+            }
         } header: {
             Text("Oura Ring · direct (experimental)")
         } footer: {

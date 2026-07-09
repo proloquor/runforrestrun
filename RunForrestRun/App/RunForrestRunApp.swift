@@ -13,6 +13,7 @@ struct RunForrestRunApp: App {
                 .environmentObject(appModel.ouraClient)
                 .environmentObject(appModel.monitor)
                 .environmentObject(appModel.coach)
+                .environmentObject(appModel.ringLogger)
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
         }

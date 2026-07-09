@@ -32,6 +32,7 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     private let stopStreamFrame   = Data([0x06, 0x04, 0x00, 0x00, 0x00, 0x00])
 
     private let authKey: Data?      // 16 bytes
+    private let debug: RingFrameLogger?
     private let sampleSubject = PassthroughSubject<HeartRateSample, Never>()
     private let stateSubject  = CurrentValueSubject<HeartRateConnectionState, Never>(.disconnected)
 
@@ -45,10 +46,13 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     /// Exponential moving average of BPM to smooth beat-to-beat jitter.
     private var smoothedBPM: Double?
 
-    init(authKey: Data?) {
+    init(authKey: Data?, debug: RingFrameLogger? = nil) {
         self.authKey = authKey
+        self.debug = debug
         super.init()
     }
+
+    private func log(_ message: String) { debug?.append(message) }
 
     var samples: AnyPublisher<HeartRateSample, Never> { sampleSubject.eraseToAnyPublisher() }
     var state: AnyPublisher<HeartRateConnectionState, Never> { stateSubject.eraseToAnyPublisher() }
@@ -85,11 +89,13 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     private func beginScanIfPossible() {
         guard wantsToRun, let central, central.state == .poweredOn else { return }
         stateSubject.send(.connecting)
+        log("scanning for ring service…")
         central.scanForPeripherals(withServices: [ringServiceUUID], options: nil)
     }
 
     private func send(_ frame: Data) {
         guard let peripheral, let writeChar else { return }
+        log("→ write \(frame.hexString)")
         peripheral.writeValue(frame, for: writeChar, type: .withResponse)
     }
 
@@ -101,7 +107,9 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     }
 
     private func handleNonce(_ nonce: Data) {
+        log("nonce \(nonce.hexString)")
         guard let authKey, let encrypted = AESECB.encrypt(nonce, key: authKey) else {
+            log("‼️ AES-ECB failed (bad key length?)")
             stateSubject.send(.unavailable(reason: "Ring auth failed (bad key?)"))
             return
         }
@@ -112,6 +120,7 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     }
 
     private func handleAuthResult(success: Bool) {
+        log(success ? "✅ authenticated" : "❌ ring rejected key")
         guard success else {
             stateSubject.send(.unavailable(reason: "Ring rejected the key"))
             return
@@ -122,6 +131,7 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
     }
 
     private func startStreaming() {
+        log("starting real-time PPG stream")
         send(startStreamFrame)
         // The ring caps a stream request at ~1 minute, so re-arm it periodically.
         keepAlive?.invalidate()
@@ -164,24 +174,26 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
                 let result = payload.count > 1 ? payload[1] : 0xFF
                 handleAuthResult(success: result == 0x00)
             default:
-                break
+                log("ext frame 0x2f/\(String(format: "%02x", ext))")
             }
 
         case 0x80: // green_ibi_quality_event: ibi = (b0 << 3) | (b1 & 0x07)
             guard payload.count >= 2 else { return }
             let ibiMs = (Int(payload[0]) << 3) | (Int(payload[1]) & 0x07)
+            log("0x80 ibi=\(ibiMs)ms")
             emit(fromIBI: ibiMs)
 
         case 0x60: // ibi_and_amplitude_event: 6× IBI (16-bit LE) + amplitude — best effort
             var i = 0
             while i + 1 < payload.count && i < 12 {
                 let ibiMs = Int(payload[i]) | (Int(payload[i + 1]) << 8)
+                log("0x60 ibi=\(ibiMs)ms")
                 emit(fromIBI: ibiMs)
                 i += 2
             }
 
         default:
-            break
+            log("unknown tag 0x\(String(format: "%02x", tag)) len=\(payload.count)")
         }
     }
 
@@ -192,7 +204,9 @@ final class OuraRingHeartRateSource: NSObject, HeartRateSource {
         let instantaneous = 60_000.0 / Double(ibiMs)
         let smoothed = smoothedBPM.map { $0 * 0.7 + instantaneous * 0.3 } ?? instantaneous
         smoothedBPM = smoothed
-        sampleSubject.send(HeartRateSample(bpm: Int(smoothed.rounded()), timestamp: Date(), origin: .ouraRing))
+        let bpm = Int(smoothed.rounded())
+        log("   → \(bpm) bpm (ibi \(ibiMs)ms)")
+        sampleSubject.send(HeartRateSample(bpm: bpm, timestamp: Date(), origin: .ouraRing))
     }
 }
 
@@ -212,12 +226,14 @@ extension OuraRingHeartRateSource: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         central.stopScan()
+        log("discovered '\(peripheral.name ?? "?")' rssi \(RSSI)")
         self.peripheral = peripheral
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        log("connected, discovering services")
         peripheral.discoverServices([ringServiceUUID])
     }
 
@@ -256,6 +272,7 @@ extension OuraRingHeartRateSource: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == notifyCharUUID, let value = characteristic.value else { return }
+        log("← notify \(value.hexString)")
         parse(value)
     }
 }
