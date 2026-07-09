@@ -22,16 +22,21 @@ final class AppModel: ObservableObject {
         self.ouraClient = ouraClient
         self.coach = coach
 
-        // Default to a Bluetooth strap on device; the simulator has no BLE so we
-        // fall back to the demo signal there.
+        // On device, prefer the direct Oura-ring source if the user has saved a ring
+        // key; otherwise fall back to a Bluetooth strap. The simulator has no BLE, so
+        // it uses the demo signal.
         #if targetEnvironment(simulator)
         let initialKind: HeartRateSourceKind = .simulated
         #else
-        let initialKind: HeartRateSourceKind = .bluetooth
+        let hasRingKey = Keychain.get(OuraRingHeartRateSource.keychainKey) != nil
+        let initialKind: HeartRateSourceKind = hasRingKey ? .ouraRing : .bluetooth
         #endif
 
         self.monitor = HeartRateMonitor(initialKind: initialKind) { kind in
             switch kind {
+            case .ouraRing:
+                let key = Keychain.get(OuraRingHeartRateSource.keychainKey).flatMap { Data(hexString: $0) }
+                return OuraRingHeartRateSource(authKey: key)
             case .bluetooth: return BLEHeartRateSource()
             case .oura: return OuraLiveHeartRateSource(client: ouraClient)
             case .simulated: return SimulatedHeartRateSource()

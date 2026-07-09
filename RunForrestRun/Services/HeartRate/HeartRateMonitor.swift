@@ -33,6 +33,10 @@ final class HeartRateMonitor: ObservableObject {
     func start() { source?.start() }
     func stop() { source?.stop() }
 
+    /// Rebuild the current source from the factory — used after credentials change
+    /// (e.g. saving the Oura ring key) so the new source picks them up.
+    func reloadSource() { switchSource(to: sourceKind) }
+
     private func switchSource(to kind: HeartRateSourceKind) {
         source?.stop()
         cancellables.removeAll()

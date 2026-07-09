@@ -11,10 +11,15 @@ struct ConnectView: View {
     @State private var message: String?
     @State private var messageIsError = false
 
+    @State private var ringKeyInput = ""
+    @State private var ringKeySaved = Keychain.get(OuraRingHeartRateSource.keychainKey) != nil
+    @State private var ringKeyError: String?
+
     var body: some View {
         NavigationStack {
             Form {
                 sourceSection
+                ringSection
                 ouraSection
                 if monitor.sourceKind == .oura {
                     latencyNote
@@ -29,6 +34,35 @@ struct ConnectView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+
+    private var ringSection: some View {
+        Section {
+            if ringKeySaved {
+                Label("Ring key saved", systemImage: "key.fill")
+                    .foregroundStyle(Theme.good)
+                Button("Remove ring key", role: .destructive) {
+                    Keychain.delete(OuraRingHeartRateSource.keychainKey)
+                    ringKeySaved = false
+                    ringKeyInput = ""
+                    if monitor.sourceKind == .ouraRing { monitor.reloadSource() }
+                }
+            } else {
+                SecureField("32-hex-character ring auth key", text: $ringKeyInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(.body, design: .monospaced))
+                Button("Save ring key") { saveRingKey() }
+                    .disabled(ringKeyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            if let ringKeyError {
+                Text(ringKeyError).font(.caption).foregroundStyle(Theme.danger)
+            }
+        } header: {
+            Text("Oura Ring · direct (experimental)")
+        } footer: {
+            Text("Reads live HR straight off the ring over Bluetooth — no cloud. This uses the ring's proprietary protocol and needs its 16-byte auth key (a 32-character hex string) that the official Oura app generated when you paired. You must extract that key from the official app's local database and paste it here. ⚠️ This is against Oura's Terms of Service, can break on firmware updates, and is unverified — if it won't connect, use a Bluetooth strap instead.")
         }
     }
 
@@ -106,6 +140,28 @@ struct ConnectView: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
             }
             .font(.footnote)
+        }
+    }
+
+    private func saveRingKey() {
+        ringKeyError = nil
+        let cleaned = ringKeyInput
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "0x", with: "")
+        guard let data = Data(hexString: cleaned), data.count == 16 else {
+            ringKeyError = "That doesn't look like a 16-byte (32 hex character) key."
+            return
+        }
+        Keychain.set(cleaned.lowercased(), for: OuraRingHeartRateSource.keychainKey)
+        ringKeySaved = true
+        ringKeyInput = ""
+        // If the ring is the active source, rebuild it so it picks up the new key;
+        // otherwise switch to it now that we can authenticate.
+        if monitor.sourceKind == .ouraRing {
+            monitor.reloadSource()
+        } else {
+            monitor.sourceKind = .ouraRing
         }
     }
 

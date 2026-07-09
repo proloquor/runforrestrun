@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 enum HeartRateSourceKind: String, CaseIterable, Identifiable {
+    case ouraRing
     case bluetooth
     case oura
     case simulated
@@ -10,6 +11,7 @@ enum HeartRateSourceKind: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .ouraRing: return "Oura Ring (direct)"
         case .bluetooth: return "Bluetooth HR strap"
         case .oura: return "Oura (cloud)"
         case .simulated: return "Demo signal"
@@ -18,6 +20,7 @@ enum HeartRateSourceKind: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .ouraRing: return "Experimental · live HR straight off the ring · needs your ring key"
         case .bluetooth: return "Real-time · best for interval alerts"
         case .oura: return "Polls Oura cloud · a few seconds of lag"
         case .simulated: return "Fake data for trying the app out"

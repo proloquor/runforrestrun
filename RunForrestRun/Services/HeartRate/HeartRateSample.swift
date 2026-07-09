@@ -4,6 +4,7 @@ import Foundation
 struct HeartRateSample: Codable, Equatable, Identifiable {
     enum Origin: String, Codable {
         case ble          // real-time BLE strap / monitor
+        case ouraRing     // real-time, straight off the Oura ring over BLE
         case oura         // polled from the Oura cloud API (has latency)
         case simulated    // demo / preview
     }

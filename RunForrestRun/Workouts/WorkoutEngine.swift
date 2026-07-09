@@ -229,6 +229,7 @@ final class WorkoutEngine: ObservableObject, Identifiable {
 
     private func monitorOrigin() -> HeartRateSample.Origin {
         switch monitor.sourceKind {
+        case .ouraRing: return .ouraRing
         case .bluetooth: return .ble
         case .oura: return .oura
         case .simulated: return .simulated
